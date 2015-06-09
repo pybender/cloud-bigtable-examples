@@ -1,0 +1,77 @@
+import org.apache.spark._
+import org.apache.spark.streaming._
+import org.apache.spark.streaming.StreamingContext._ // not necessary in Spark 1.3+
+import org.apache.hadoop.io.LongWritable
+import org.apache.hadoop.io.Text
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat
+import org.apache.spark.rdd.NewHadoopRDD
+import org.apache.hadoop.hbase.{HBaseConfiguration, HTableDescriptor}
+import org.apache.hadoop.hbase.mapreduce.TableInputFormat
+import org.apache.hadoop.hbase.mapreduce.TableOutputFormat
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.HColumnDescriptor
+import org.apache.hadoop.hbase.util.Bytes
+import org.apache.hadoop.hbase.client.ConnectionFactory
+import org.apache.hadoop.hbase.client.Connection
+import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.Table       
+import org.apache.hadoop.hbase.client
+import java.lang.System
+import org.apache.hadoop.mapreduce.JobContext
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.hbase.client.Increment
+import scala.collection.JavaConversions._
+
+object SparkExample {  
+
+    def main(args: Array[String]) {
+
+       val conf = new SparkConf().setMaster("local[2]").setAppName("FileWordCount") 
+       val ssc = new StreamingContext(conf, Seconds(30)) 
+       val confHBase = HBaseConfiguration.create()
+       val name = "test-output"
+       val tableName = TableName.valueOf(name)
+       confHBase.addResource(new Path("hbase-site.xml"))	
+       confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
+       val conn = ConnectionFactory.createConnection(confHBase); 
+       try {
+         val admin = conn.getAdmin()
+	 if (!admin.tableExists(tableName)) {
+	    val tableDescriptor = new HTableDescriptor(tableName)
+	    tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
+	    admin.createTable(tableDescriptor) 
+	 }
+	 admin.close()
+       } catch {
+         case e: Exception => println(e)
+       }
+       conn.close()
+
+       val filePath = "input/"
+       val dStream = ssc.textFileStream(filePath)
+
+       def toBytes(word: String):Array[Byte] = {
+         word.toCharArray.map(_.toByte)
+       }
+
+       dStream.foreachRDD { rdd => 
+         rdd.foreachPartition {  partitionRecords =>
+            val confHBase1 = HBaseConfiguration.create()
+            confHBase1.addResource(new Path("hbase-site.xml"))
+            val conn = ConnectionFactory.createConnection(confHBase1)
+            val tableName1 = TableName.valueOf(name)
+	    val mutator = conn.getBufferedMutator(tableName1)
+            partitionRecords.foreach{ line => 
+  	       mutator.mutate(line.split(" ").filter(_!="").map(word => 
+	         new Increment(toBytes(word))
+		 .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
+            }
+    	    mutator.close()
+	    conn.close()
+	 }
+       }
+
+       ssc.start()
+       ssc.awaitTermination()
+   }
+}
