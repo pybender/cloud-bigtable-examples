@@ -28,7 +28,7 @@ object SparkExample {
        val confHBase = HBaseConfiguration.create()
        confHBase.set("google.bigtable.project.id", "PROJECT_ID");
        confHBase.set("google.bigtable.cluster.name", "CLUSTER_NAME");
-       confHBase.set("google.bigtable.zone.name", "ZONG_NAME");
+       confHBase.set("google.bigtable.zone.name", "ZONE_NAME");
        confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
        confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
        val conn = ConnectionFactory.createConnection(confHBase); 
@@ -52,7 +52,7 @@ object SparkExample {
 	 }
 	 admin.close()
        } catch {
-         case e: Exception => println(e)
+         case e: Exception => e.printStackTrace
        }
        conn.close()
 
@@ -68,12 +68,22 @@ object SparkExample {
 	    val conn1 = createConnection
             val tableName1 = TableName.valueOf(name)
 	    val mutator = conn1.getBufferedMutator(tableName1)
-            partitionRecords.foreach{ line => 
-  	       mutator.mutate(line.split(" ").filter(_!="").map(word => 
-	         new Increment(toBytes(word))
-		 .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
+	    try {
+              partitionRecords.foreach{ line => 
+                mutator.mutate(line.split(" ").filter(_!="").map(word => 
+                new Increment(toBytes(word))
+                .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
+              }
+            } catch {
+              case retries_e: RetriesExhaustedWithDetailsException => retries_e.getCauses().foreach(_.printStackTrace)
+              case e: Exception => e.printStackTrace
             }
-    	    mutator.close()
+            try {
+              mutator.close()
+            } catch {
+              case retries_e: RetriesExhaustedWithDetailsException => retries_e.getCauses().foreach(_.printStackTrace)
+              case e: Exception => e.printStackTrace
+            }
 	    conn1.close()
 	 }
        }
