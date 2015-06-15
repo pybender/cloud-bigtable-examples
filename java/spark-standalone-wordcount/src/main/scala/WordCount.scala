@@ -34,9 +34,9 @@ object SparkExample {
 	
 	//get hbase table
         val conf = HBaseConfiguration.create()
-        conf.set("google.bigtable.project.id", "sduskis-hello-shakespear");
-        conf.set("google.bigtable.cluster.name", "us-central1-b");
-        conf.set("google.bigtable.zone.name", "warmup-spark");
+        conf.set("google.bigtable.project.id", "PROJECT_ID");
+        conf.set("google.bigtable.cluster.name", "CLUSTER_NAME");
+        conf.set("google.bigtable.zone.name", "ZONE_NAME");
 	conf.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
 
         val tableName = "output-table"
