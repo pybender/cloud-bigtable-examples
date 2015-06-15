@@ -23,17 +23,26 @@ import org.apache.hadoop.hbase.client.Increment
 import scala.collection.JavaConversions._
 
 object SparkExample {  
+    
+    def createConnection = {
+       val confHBase = HBaseConfiguration.create()
+       confHBase.set("google.bigtable.project.id", "PROJECT_ID");
+       confHBase.set("google.bigtable.cluster.name", "CLUSTER_NAME");
+       confHBase.set("google.bigtable.zone.name", "ZONG_NAME");
+       confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+       confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
+       val conn = ConnectionFactory.createConnection(confHBase); 
+       conn
+    }
 
     def main(args: Array[String]) {
 
        val conf = new SparkConf().setMaster("local[2]").setAppName("FileWordCount") 
        val ssc = new StreamingContext(conf, Seconds(30)) 
-       val confHBase = HBaseConfiguration.create()
        val name = "test-output"
        val tableName = TableName.valueOf(name)
-       confHBase.addResource(new Path("hbase-site.xml"))	
-       confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
-       val conn = ConnectionFactory.createConnection(confHBase); 
+       val conn = createConnection
+   
        try {
          val admin = conn.getAdmin()
 	 if (!admin.tableExists(tableName)) {
@@ -47,7 +56,7 @@ object SparkExample {
        }
        conn.close()
 
-       val filePath = "input/"
+       val filePath = "word_count/"
        val dStream = ssc.textFileStream(filePath)
 
        def toBytes(word: String):Array[Byte] = {
@@ -56,18 +65,16 @@ object SparkExample {
 
        dStream.foreachRDD { rdd => 
          rdd.foreachPartition {  partitionRecords =>
-            val confHBase1 = HBaseConfiguration.create()
-            confHBase1.addResource(new Path("hbase-site.xml"))
-            val conn = ConnectionFactory.createConnection(confHBase1)
+	    val conn1 = createConnection
             val tableName1 = TableName.valueOf(name)
-	    val mutator = conn.getBufferedMutator(tableName1)
+	    val mutator = conn1.getBufferedMutator(tableName1)
             partitionRecords.foreach{ line => 
   	       mutator.mutate(line.split(" ").filter(_!="").map(word => 
 	         new Increment(toBytes(word))
 		 .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
             }
     	    mutator.close()
-	    conn.close()
+	    conn1.close()
 	 }
        }
 
