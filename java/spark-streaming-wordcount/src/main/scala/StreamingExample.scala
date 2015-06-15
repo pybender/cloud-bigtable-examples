@@ -21,6 +21,7 @@ import org.apache.hadoop.mapreduce.JobContext
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.client.Increment
 import scala.collection.JavaConversions._
+import org.apache.hadoop.hbase.client.RetriesExhaustedWithDetailsException
 
 object SparkExample {  
     
