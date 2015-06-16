@@ -18,8 +18,13 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 
 object SparkExample {
   def main(args: Array[String]) {
+        val prefixName = args(0)
+        val projectID = args(1)
+        val clusterName = args(2)
+        val zoneName = args(3)
 
-	val sc= new SparkContext("spark://PREFIX_NAME-m:7077", "WordCount")   // Replace PREFIX_NAME 
+	val masterInfo = "spark://" + prefixName + "-m:7077"
+	val sc= new SparkContext(masterInfo, "WordCount")   // Replace PREFIX_NAME 
 
 	val file = "word_count/romeo_juliet.txt"
 	
@@ -34,9 +39,9 @@ object SparkExample {
 	
 	//get hbase table
         val conf = HBaseConfiguration.create()
-        conf.set("google.bigtable.project.id", "PROJECT_ID");
-        conf.set("google.bigtable.cluster.name", "CLUSTER_NAME");
-        conf.set("google.bigtable.zone.name", "ZONE_NAME");
+        conf.set("google.bigtable.project.id", projectID);
+        conf.set("google.bigtable.cluster.name", clusterName);
+        conf.set("google.bigtable.zone.name", zoneName);
 	conf.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
 
         val tableName = "output-table"

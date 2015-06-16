@@ -25,11 +25,11 @@ import org.apache.hadoop.hbase.client.RetriesExhaustedWithDetailsException
 
 object SparkExample {  
     
-    def createConnection = {
+    def createConnection(projectID: String, clusterName: String, zoneName: String) = {
        val confHBase = HBaseConfiguration.create()
-       confHBase.set("google.bigtable.project.id", "PROJECT_ID");
-       confHBase.set("google.bigtable.cluster.name", "CLUSTER_NAME");
-       confHBase.set("google.bigtable.zone.name", "ZONE_NAME");
+       confHBase.set("google.bigtable.project.id", projectID);
+       confHBase.set("google.bigtable.cluster.name", clusterName);
+       confHBase.set("google.bigtable.zone.name", zoneName);
        confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
        confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
        val conn = ConnectionFactory.createConnection(confHBase); 
@@ -37,12 +37,16 @@ object SparkExample {
     }
 
     def main(args: Array[String]) {
-
+       val prefixName = args(0)
+       val projectID = args(1)
+       val clusterName = args(2)
+       val zoneName = args(3)
+       
        val conf = new SparkConf().setMaster("local[2]").setAppName("FileWordCount") 
        val ssc = new StreamingContext(conf, Seconds(30)) 
        val name = "test-output"
        val tableName = TableName.valueOf(name)
-       val conn = createConnection
+       val conn = createConnection(projectID, clusterName, zoneName)
    
        try {
          val admin = conn.getAdmin()
@@ -66,7 +70,7 @@ object SparkExample {
 
        dStream.foreachRDD { rdd => 
          rdd.foreachPartition {  partitionRecords =>
-	    val conn1 = createConnection
+	    val conn1 = createConnection(projectID, clusterName, zoneName)
             val tableName1 = TableName.valueOf(name)
 	    val mutator = conn1.getBufferedMutator(tableName1)
 	    try {
