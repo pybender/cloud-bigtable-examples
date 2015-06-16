@@ -22,6 +22,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.client.Increment
 import scala.collection.JavaConversions._
 import org.apache.hadoop.hbase.client.RetriesExhaustedWithDetailsException
+import java.lang.Exception
 
 object SparkExample {  
     
@@ -37,6 +38,9 @@ object SparkExample {
     }
 
     def main(args: Array[String]) {
+       if (args.length < 4) {
+	 throw new Exception("Please enter prefix name, project ID, cluster name, and zone name as arguments")
+       }
        val prefixName = args(0)
        val projectID = args(1)
        val clusterName = args(2)

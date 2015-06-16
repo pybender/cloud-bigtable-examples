@@ -9,6 +9,7 @@ import org.apache.hadoop.hbase.client.ConnectionFactory
 import org.apache.hadoop.hbase.client.Connection
 import java.lang.System
 import java.lang.ClassNotFoundException
+import java.lang.Exception
 import org.apache.hadoop.mapreduce.JobContext
 import scala.runtime.ScalaRunTime._
 import java.util.Arrays.sort
@@ -18,13 +19,16 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 
 object SparkExample {
   def main(args: Array[String]) {
+        if (args.length < 4) {
+	   throw new Exception("Please enter prefix name, project ID, cluster name, and zone name as arguments")
+	}
         val prefixName = args(0)
         val projectID = args(1)
         val clusterName = args(2)
         val zoneName = args(3)
 
 	val masterInfo = "spark://" + prefixName + "-m:7077"
-	val sc= new SparkContext(masterInfo, "WordCount")   // Replace PREFIX_NAME 
+	val sc= new SparkContext(masterInfo, "WordCount") 
 
 	val file = "word_count/romeo_juliet.txt"
 	
@@ -46,7 +50,7 @@ object SparkExample {
 
         val tableName = "output-table"
         conf.set(TableInputFormat.INPUT_TABLE, tableName);
-	val hBaseRDD = sc.newAPIHadoopRDD(conf, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) //.sortByKey()
+	val hBaseRDD = sc.newAPIHadoopRDD(conf, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) 
 	val hBaseKeysRDD = hBaseRDD.keys.map(a => Bytes.toString(a.get()))
 
         val diff = keysRDD.toArray().toSet.diff(hBaseKeysRDD.toArray().toSet)
