@@ -7,6 +7,7 @@ import org.apache.hadoop.hbase.HColumnDescriptor
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.hadoop.hbase.client.ConnectionFactory
 import org.apache.hadoop.hbase.client.Connection
+import org.apache.hadoop.hbase.client
 import java.lang.System
 import java.lang.ClassNotFoundException
 import java.lang.Exception
@@ -14,48 +15,80 @@ import org.apache.hadoop.mapreduce.JobContext
 import scala.runtime.ScalaRunTime._
 import java.util.Arrays.sort
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
+import org.apache.hadoop.hbase.client.RetriesExhaustedWithDetailsException
+import java.lang.Exception
+import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.Table       
+import org.apache.hadoop.hbase.client.Increment
+import scala.collection.JavaConversions._
+import org.apache.hadoop.hbase.util.Bytes
+import org.apache.hadoop.mapreduce.JobContext
+
 
 /** word count in Spark **/
 
 object SparkExample {
   def main(args: Array[String]) {
-        if (args.length < 4) {
-	   throw new Exception("Please enter prefix name, project ID, cluster name, and zone name as arguments")
+        if (args.length < 6) {
+	   throw new Exception("Please enter prefix name, project ID, cluster name, zone name, input file path, and output table name as arguments")
 	}
         val prefixName = args(0)
         val projectID = args(1)
         val clusterName = args(2)
         val zoneName = args(3)
-
+	val file = args(4)
+	val name = args(5)
+	
 	val masterInfo = "spark://" + prefixName + "-m:7077"
 	val sc= new SparkContext(masterInfo, "WordCount") 
 
-	val file = "word_count/romeo_juliet.txt"
+	// create new table if it's not already existed
+        val tableName = TableName.valueOf(name)
+        val confHBase = HBaseConfiguration.create()
+        confHBase.set("google.bigtable.project.id", projectID);
+        confHBase.set("google.bigtable.cluster.name", clusterName);
+        confHBase.set("google.bigtable.zone.name", zoneName);
+        confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+        confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
+        val conn = ConnectionFactory.createConnection(confHBase); 
+   
+        try {
+          val admin = conn.getAdmin()
+	   if (!admin.tableExists(tableName)) {
+	       val tableDescriptor = new HTableDescriptor(tableName)
+	       tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
+	       admin.createTable(tableDescriptor) 
+	   }
+	   admin.close()
+        } catch {
+          case e: Exception => e.printStackTrace; throw e
+        }
+        conn.close()
+
+        def toBytes(word: String):Array[Byte] = {
+          word.toCharArray.map(_.toByte)
+        }
 	
 	//SparkContext.textFile: reads file as a collection of lines
 	val linesRDD = sc.textFile(file)
-	
-	// word count
-	val wordsRDD = linesRDD.flatMap(line => line.split(" ")).map(word => (word,1)).reduceByKey(_+_).sortByKey()
-	val count = wordsRDD.count()
-	val keysRDD = wordsRDD.keys
-	println("word count = "+count)
-	
-	//get hbase table
-        val conf = HBaseConfiguration.create()
-        conf.set("google.bigtable.project.id", projectID);
-        conf.set("google.bigtable.cluster.name", clusterName);
-        conf.set("google.bigtable.zone.name", zoneName);
-	conf.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+	linesRDD.foreachPartition { partitionRecords => {
+	      val confHBase1 = HBaseConfiguration.create()
+              confHBase1.set("google.bigtable.project.id", projectID);
+	      confHBase1.set("google.bigtable.cluster.name", clusterName);
+              confHBase1.set("google.bigtable.zone.name", zoneName);
+	      confHBase1.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+              val conn1 = ConnectionFactory.createConnection(confHBase1); 
+              val tableName1 = TableName.valueOf(name)
+              val mutator = conn1.getBufferedMutator(tableName1)
 
-        val tableName = "output-table"
-        conf.set(TableInputFormat.INPUT_TABLE, tableName);
-	val hBaseRDD = sc.newAPIHadoopRDD(conf, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) 
-	val hBaseKeysRDD = hBaseRDD.keys.map(a => Bytes.toString(a.get()))
-
-        val diff = keysRDD.toArray().toSet.diff(hBaseKeysRDD.toArray().toSet)
-	println("Printing diff: ")
-	diff.foreach(println)
+	      partitionRecords.foreach{ line => {
+        	mutator.mutate(line.split(" ").filter(_!="").map{ word => 
+                  new Increment(toBytes(word)).addColumn(toBytes("cf1"), toBytes("Count"), 1L)}.toList)
+	      }   }
+              mutator.close()
+ 	      conn1.close()
+   	}    }   
+ 
 	System.exit(0)
 
   }

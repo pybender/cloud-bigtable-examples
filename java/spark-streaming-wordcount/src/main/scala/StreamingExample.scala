@@ -23,10 +23,26 @@ import org.apache.hadoop.hbase.client.Increment
 import scala.collection.JavaConversions._
 import org.apache.hadoop.hbase.client.RetriesExhaustedWithDetailsException
 import java.lang.Exception
+import java.lang.Runtime._
 
 object SparkExample {  
     
-    def createConnection(projectID: String, clusterName: String, zoneName: String) = {
+    def main(args: Array[String]) {
+       if (args.length < 6) {
+	   throw new Exception("Please enter prefix name, project ID, cluster name, zone name, input directory, and output table name as arguments")
+       }
+       val prefixName = args(0)
+       val projectID = args(1)
+       val clusterName = args(2)
+       val zoneName = args(3)
+       val filePath = args(4)
+       val name = args(5)
+      
+       val conf = new SparkConf().setMaster("local[*]").setAppName("FileWordCount") 
+       conf.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p:/home/hadoop/hbase-install/lib/bigtable/alpn-boot-7.0.0.v20140317.jar")
+       conf.set("spark.driver.extraJavaOptions", " -Xbootclasspath/p:/home/hadoop/hbase-install/lib/bigtable/alpn-boot-7.0.0.v20140317.jar")
+       val ssc = new StreamingContext(conf, Seconds(30)) 
+       val tableName = TableName.valueOf(name)
        val confHBase = HBaseConfiguration.create()
        confHBase.set("google.bigtable.project.id", projectID);
        confHBase.set("google.bigtable.cluster.name", clusterName);
@@ -34,38 +50,20 @@ object SparkExample {
        confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
        confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
        val conn = ConnectionFactory.createConnection(confHBase); 
-       conn
-    }
-
-    def main(args: Array[String]) {
-       if (args.length < 4) {
-	 throw new Exception("Please enter prefix name, project ID, cluster name, and zone name as arguments")
-       }
-       val prefixName = args(0)
-       val projectID = args(1)
-       val clusterName = args(2)
-       val zoneName = args(3)
-       
-       val conf = new SparkConf().setMaster("local[2]").setAppName("FileWordCount") 
-       val ssc = new StreamingContext(conf, Seconds(30)) 
-       val name = "test-output"
-       val tableName = TableName.valueOf(name)
-       val conn = createConnection(projectID, clusterName, zoneName)
    
        try {
          val admin = conn.getAdmin()
-	 if (!admin.tableExists(tableName)) {
-	    val tableDescriptor = new HTableDescriptor(tableName)
-	    tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
-	    admin.createTable(tableDescriptor) 
-	 }
-	 admin.close()
+	  if (!admin.tableExists(tableName)) {
+	      val tableDescriptor = new HTableDescriptor(tableName)
+	          tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
+		      admin.createTable(tableDescriptor) 
+		       }
+		        admin.close()
        } catch {
-         case e: Exception => e.printStackTrace
+         case e: Exception => e.printStackTrace; throw e
        }
        conn.close()
 
-       val filePath = "word_count/"
        val dStream = ssc.textFileStream(filePath)
 
        def toBytes(word: String):Array[Byte] = {
@@ -74,24 +72,53 @@ object SparkExample {
 
        dStream.foreachRDD { rdd => 
          rdd.foreachPartition {  partitionRecords =>
-	    val conn1 = createConnection(projectID, clusterName, zoneName)
+
+            val runtime = Runtime.getRuntime()
+            import runtime.{ totalMemory, freeMemory, maxMemory }
+            println("^^^^^^^^^^^^ BEFORE PROCESSING THE DOCUMENT")
+            println("^^^^^^^^^^^^ TOTAL MEMORY: "+ totalMemory)
+            println("^^^^^^^^^^^^ FREE MEMORY: "+ freeMemory)
+            println("^^^^^^^^^^^^ MAX MEMORY: "+ maxMemory)
+
+            val confHBase1 = HBaseConfiguration.create()
+            confHBase1.set("google.bigtable.project.id", projectID);
+            confHBase1.set("google.bigtable.cluster.name", clusterName);
+            confHBase1.set("google.bigtable.zone.name", zoneName);
+            confHBase1.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+            val conn1 = ConnectionFactory.createConnection(confHBase1); 
+
             val tableName1 = TableName.valueOf(name)
 	    val mutator = conn1.getBufferedMutator(tableName1)
-	    try {
-              partitionRecords.foreach{ line => 
-                mutator.mutate(line.split(" ").filter(_!="").map(word => 
+	    var count = 0
+
+            partitionRecords.foreach{ line => { 
+              count = count+1; 
+	      try {
+		mutator.mutate(line.split(" ").filter(_!="").map(word => 
                 new Increment(toBytes(word))
                 .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
-              }
-            } catch {
-              case retries_e: RetriesExhaustedWithDetailsException => retries_e.getCauses().foreach(_.printStackTrace)
-              case e: Exception => e.printStackTrace
-            }
+	      } catch {
+	        case retries_e: RetriesExhaustedWithDetailsException => { 
+		  println("*********FAIL AT COUNT = " + count + "***********")
+		  println("************ LINE IS: "+line)
+	          retries_e.getCauses().foreach(_.printStackTrace); 
+	  	  throw retries_e;
+		}
+		case e: Exception => e.printStackTrace; println("*********FAIL AT COUNT = " + count + "***********"); println("************ LINE IS: "+line); throw e
+	      }
+//  	      mutator.flush()
+	      }
+	    }
+            val runtime1 = Runtime.getRuntime()
+            println("//////////// AFTER PROCESSING THE DOCUMENT")
+            println("//////////// TOTAL MEMORY: "+ runtime1.totalMemory)
+            println("//////////// FREE MEMORY: "+ runtime1.freeMemory)
+            println("//////////// MAX MEMORY: "+ runtime1.maxMemory)
             try {
               mutator.close()
             } catch {
-              case retries_e: RetriesExhaustedWithDetailsException => retries_e.getCauses().foreach(_.printStackTrace)
-              case e: Exception => e.printStackTrace
+              case retries_e: RetriesExhaustedWithDetailsException => retries_e.getCauses().foreach(_.printStackTrace); throw retries_e
+              case e: Exception => e.printStackTrace; throw e
             }
 	    conn1.close()
 	 }
@@ -101,3 +128,4 @@ object SparkExample {
        ssc.awaitTermination()
    }
 }
+
