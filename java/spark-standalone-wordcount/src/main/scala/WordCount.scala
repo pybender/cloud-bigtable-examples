@@ -20,24 +20,26 @@ import java.lang.Exception
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Table       
 import org.apache.hadoop.hbase.client.Increment
+import org.apache.hadoop.hbase.client.Put
 import scala.collection.JavaConversions._
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.hadoop.mapreduce.JobContext
-
+import org.apache.spark.SparkException
 
 /** word count in Spark **/
 
 object SparkExample {
   def main(args: Array[String]) {
-        if (args.length < 6) {
-	   throw new Exception("Please enter prefix name, project ID, cluster name, zone name, input file path, and output table name as arguments")
+        if (args.length < 7) {
+	   throw new Exception("Please enter prefix name, project ID, cluster name, zone name, input file path, output table name, and expected count as arguments")
 	}
         val prefixName = args(0)
         val projectID = args(1)
         val clusterName = args(2)
         val zoneName = args(3)
-	val file = args(4)
-	val name = args(5)
+	val file = args(4) //file path
+	val name = args(5) //output table name
+	val expectedCount = args(6).toInt
 	
 	val masterInfo = "spark://" + prefixName + "-m:7077"
 	val sc= new SparkContext(masterInfo, "WordCount") 
@@ -56,7 +58,7 @@ object SparkExample {
           val admin = conn.getAdmin()
 	   if (!admin.tableExists(tableName)) {
 	       val tableDescriptor = new HTableDescriptor(tableName)
-	       tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
+	       tableDescriptor.addFamily(new HColumnDescriptor("cf"))
 	       admin.createTable(tableDescriptor) 
 	   }
 	   admin.close()
@@ -65,30 +67,61 @@ object SparkExample {
         }
         conn.close()
 
-        def toBytes(word: String):Array[Byte] = {
-          word.toCharArray.map(_.toByte)
-        }
-	
-	//SparkContext.textFile: reads file as a collection of lines
-	val linesRDD = sc.textFile(file)
-	linesRDD.foreachPartition { partitionRecords => {
-	      val confHBase1 = HBaseConfiguration.create()
-              confHBase1.set("google.bigtable.project.id", projectID);
-	      confHBase1.set("google.bigtable.cluster.name", clusterName);
-              confHBase1.set("google.bigtable.zone.name", zoneName);
-	      confHBase1.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
-              val conn1 = ConnectionFactory.createConnection(confHBase1); 
-              val tableName1 = TableName.valueOf(name)
-              val mutator = conn1.getBufferedMutator(tableName1)
 
-	      partitionRecords.foreach{ line => {
-        	mutator.mutate(line.split(" ").filter(_!="").map{ word => 
-                  new Increment(toBytes(word)).addColumn(toBytes("cf1"), toBytes("Count"), 1L)}.toList)
-	      }   }
-              mutator.close()
- 	      conn1.close()
-   	}    }   
- 
+	val wordCounts = sc.textFile(file).flatMap(_.split(" ")).filter(_!="").map(word => (word, 1)).reduceByKey((a,b) => a+b)
+        wordCounts.foreachPartition { partition => {
+	    val confHBase1 = HBaseConfiguration.create()
+            confHBase1.set("google.bigtable.project.id", projectID);
+	    confHBase1.set("google.bigtable.cluster.name", clusterName);
+            confHBase1.set("google.bigtable.zone.name", zoneName);
+	    confHBase1.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+            val conn1 = ConnectionFactory.createConnection(confHBase1); 
+            val tableName1 = TableName.valueOf(name)
+            val mutator = conn1.getBufferedMutator(tableName1)
+
+            def toBytes(word: String):Array[Byte] = {
+              word.toCharArray.map(_.toByte)
+            }
+	    
+	    partition.foreach{ wordCount => {
+	      val (word, count) = wordCount
+  	      try {
+	        mutator.mutate(new Put(toBytes(word)).addColumn(toBytes("cf"), toBytes("Count"), Bytes.toBytes(count))) 
+	      } catch {
+	        case retries_e: RetriesExhaustedWithDetailsException => { 
+		  retries_e.getCauses().foreach(_.printStackTrace); println("retries: "+retries_e.getClass);   throw retries_e.getCauses().get(0);   	  }
+	        case e: Exception => println("general exception: "+ e.getClass);   throw e
+	      }
+	    }   }
+	}   }
+	
+	//validate table count
+	val confValidate = HBaseConfiguration.create()
+	confValidate.set("google.bigtable.project.id", projectID);
+        confValidate.set("google.bigtable.cluster.name", clusterName);
+        confValidate.set("google.bigtable.zone.name", zoneName);
+	confValidate.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
+        confValidate.set(TableInputFormat.INPUT_TABLE, name);
+	val hBaseRDD = sc.newAPIHadoopRDD(confValidate, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) 	
+	val count = hBaseRDD.count.toInt
+	println("Word count = " + count)
+	if (expectedCount == count) {
+	  println("Word count success")
+	} else {
+	  println("Word count failed")
+	}
+	
+	//cleanup
+        val connCleanup = ConnectionFactory.createConnection(confHBase); 
+        try {
+          val admin = connCleanup.getAdmin()
+	  admin.deleteTable(tableName)
+	  admin.close()
+        } catch {
+          case e: Exception => e.printStackTrace; throw e
+        }
+        connCleanup.close()
+
 	System.exit(0)
 
   }

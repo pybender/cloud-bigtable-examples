@@ -53,12 +53,12 @@ object SparkExample {
    
        try {
          val admin = conn.getAdmin()
-	  if (!admin.tableExists(tableName)) {
-	      val tableDescriptor = new HTableDescriptor(tableName)
-	          tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
-		      admin.createTable(tableDescriptor) 
-		       }
-		        admin.close()
+	 if (!admin.tableExists(tableName)) {
+	   val tableDescriptor = new HTableDescriptor(tableName)
+	   tableDescriptor.addFamily(new HColumnDescriptor("WordCount"))
+	   admin.createTable(tableDescriptor) 
+	 }
+	 admin.close()
        } catch {
          case e: Exception => e.printStackTrace; throw e
        }
@@ -72,14 +72,6 @@ object SparkExample {
 
        dStream.foreachRDD { rdd => 
          rdd.foreachPartition {  partitionRecords =>
-
-            val runtime = Runtime.getRuntime()
-            import runtime.{ totalMemory, freeMemory, maxMemory }
-            println("^^^^^^^^^^^^ BEFORE PROCESSING THE DOCUMENT")
-            println("^^^^^^^^^^^^ TOTAL MEMORY: "+ totalMemory)
-            println("^^^^^^^^^^^^ FREE MEMORY: "+ freeMemory)
-            println("^^^^^^^^^^^^ MAX MEMORY: "+ maxMemory)
-
             val confHBase1 = HBaseConfiguration.create()
             confHBase1.set("google.bigtable.project.id", projectID);
             confHBase1.set("google.bigtable.cluster.name", clusterName);
@@ -89,31 +81,23 @@ object SparkExample {
 
             val tableName1 = TableName.valueOf(name)
 	    val mutator = conn1.getBufferedMutator(tableName1)
-	    var count = 0
 
             partitionRecords.foreach{ line => { 
-              count = count+1; 
 	      try {
 		mutator.mutate(line.split(" ").filter(_!="").map(word => 
                 new Increment(toBytes(word))
                 .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
 	      } catch {
 	        case retries_e: RetriesExhaustedWithDetailsException => { 
-		  println("*********FAIL AT COUNT = " + count + "***********")
-		  println("************ LINE IS: "+line)
 	          retries_e.getCauses().foreach(_.printStackTrace); 
 	  	  throw retries_e;
 		}
-		case e: Exception => e.printStackTrace; println("*********FAIL AT COUNT = " + count + "***********"); println("************ LINE IS: "+line); throw e
+		case e: Exception => e.printStackTrace; throw e
 	      }
 //  	      mutator.flush()
 	      }
 	    }
-            val runtime1 = Runtime.getRuntime()
-            println("//////////// AFTER PROCESSING THE DOCUMENT")
-            println("//////////// TOTAL MEMORY: "+ runtime1.totalMemory)
-            println("//////////// FREE MEMORY: "+ runtime1.freeMemory)
-            println("//////////// MAX MEMORY: "+ runtime1.maxMemory)
+
             try {
               mutator.close()
             } catch {
