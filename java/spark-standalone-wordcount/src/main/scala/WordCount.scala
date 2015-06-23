@@ -104,13 +104,7 @@ object SparkExample {
         confValidate.set(TableInputFormat.INPUT_TABLE, name);
 	val hBaseRDD = sc.newAPIHadoopRDD(confValidate, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) 	
 	val count = hBaseRDD.count.toInt
-	println("Word count = " + count)
-	if (expectedCount == count) {
-	  println("Word count success")
-	} else {
-	  println("Word count failed")
-	}
-	
+
 	//cleanup
         val connCleanup = ConnectionFactory.createConnection(confHBase); 
         try {
@@ -121,6 +115,14 @@ object SparkExample {
           case e: Exception => e.printStackTrace; throw e
         }
         connCleanup.close()
+
+	println("Word count = " + count)
+	if (expectedCount == count) {
+	  println("Word count success")
+	} else {
+	  println("Word count failed")
+	  System.exit(1)
+	}
 
 	System.exit(0)
 
