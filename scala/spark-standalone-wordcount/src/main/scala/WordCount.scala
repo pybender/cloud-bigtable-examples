@@ -52,18 +52,23 @@ object SparkExample {
         confHBase.set("google.bigtable.zone.name", zoneName);
         confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
         confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
+
+
+	println(">>>>>>>>>>>>>>> BEFORE CONNECTION IS CREATED")
         val conn = ConnectionFactory.createConnection(confHBase); 
    
+        println(">>>>>>>>>>>>>>>> connection created")
         try {
           val admin = conn.getAdmin()
 	   if (!admin.tableExists(tableName)) {
 	       val tableDescriptor = new HTableDescriptor(tableName)
 	       tableDescriptor.addFamily(new HColumnDescriptor("cf"))
 	       admin.createTable(tableDescriptor) 
+	       println("&&&&&&&&&& TABLE WAS CREATED! table name: "+name)
 	   }
 	   admin.close()
         } catch {
-          case e: Exception => e.printStackTrace; throw e
+          case e: Exception => e.printStackTrace; println(">>>>>>>> EXCEPTION CAUGHT WHEN CREATING A TABLE!!!"); throw e
         }
         conn.close()
 
