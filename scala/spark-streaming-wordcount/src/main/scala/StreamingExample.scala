@@ -28,28 +28,19 @@ import java.lang.Runtime._
 object SparkExample {  
     
     def main(args: Array[String]) {
-       if (args.length < 6) {
-	   throw new Exception("Please enter prefix name, project ID, cluster name, zone name, input directory, and output table name as arguments")
+       if (args.length < 3) {
+	   throw new Exception("Please enter prefix name, input directory, and output table name as arguments")
        }
        val prefixName = args(0)
-       val projectID = args(1)
-       val clusterName = args(2)
-       val zoneName = args(3)
-       val filePath = args(4)
-       val name = args(5)
+       val inputDirectory = args(1)
+       val name = args(2)
       
        val conf = new SparkConf().setMaster("local[*]").setAppName("FileWordCount") 
        conf.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p:/home/hadoop/hbase-install/lib/bigtable/alpn-boot-7.0.0.v20140317.jar")
        conf.set("spark.driver.extraJavaOptions", " -Xbootclasspath/p:/home/hadoop/hbase-install/lib/bigtable/alpn-boot-7.0.0.v20140317.jar")
        val ssc = new StreamingContext(conf, Seconds(30)) 
        val tableName = TableName.valueOf(name)
-       val confHBase = HBaseConfiguration.create()
-       confHBase.set("google.bigtable.project.id", projectID);
-       confHBase.set("google.bigtable.cluster.name", clusterName);
-       confHBase.set("google.bigtable.zone.name", zoneName);
-       confHBase.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
-       confHBase.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p=/home/hadoop/alpn-boot-7.0.0.v20140317.jar")
-       val conn = ConnectionFactory.createConnection(confHBase); 
+       val conn = ConnectionFactory.createConnection(); 
    
        try {
          val admin = conn.getAdmin()
@@ -64,7 +55,7 @@ object SparkExample {
        }
        conn.close()
 
-       val dStream = ssc.textFileStream(filePath)
+       val dStream = ssc.textFileStream(inputDirectory)
 
        def toBytes(word: String):Array[Byte] = {
          word.toCharArray.map(_.toByte)
@@ -72,13 +63,7 @@ object SparkExample {
 
        dStream.foreachRDD { rdd => 
          rdd.foreachPartition {  partitionRecords =>
-            val confHBase1 = HBaseConfiguration.create()
-            confHBase1.set("google.bigtable.project.id", projectID);
-            confHBase1.set("google.bigtable.cluster.name", clusterName);
-            confHBase1.set("google.bigtable.zone.name", zoneName);
-            confHBase1.set("hbase.client.connection.impl", "org.apache.hadoop.hbase.client.BigtableConnection");
-            val conn1 = ConnectionFactory.createConnection(confHBase1); 
-
+            val conn1 = ConnectionFactory.createConnection(); 
             val tableName1 = TableName.valueOf(name)
 	    val mutator = conn1.getBufferedMutator(tableName1)
 
@@ -107,7 +92,6 @@ object SparkExample {
 	    conn1.close()
 	 }
        }
-
        ssc.start()
        ssc.awaitTermination()
    }
