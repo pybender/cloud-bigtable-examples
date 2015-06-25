@@ -28,16 +28,13 @@ import java.lang.Runtime._
 object SparkExample {  
     
     def main(args: Array[String]) {
-       if (args.length < 3) {
-	   throw new Exception("Please enter prefix name, input directory, and output table name as arguments")
+       if (args.length < 2) {
+	   throw new Exception("Please enter input directory, and output table name as arguments")
        }
-       val prefixName = args(0)
-       val inputDirectory = args(1)
-       val name = args(2)
-      
+       val inputDirectory = args(0)
+       val name = args(1)
+
        val conf = new SparkConf().setMaster("local[*]").setAppName("FileWordCount") 
-       conf.set("spark.executor.extraJavaOptions", " -Xbootclasspath/p:/home/hadoop/hbase-install/lib/bigtable/alpn-boot-7.0.0.v20140317.jar")
-       conf.set("spark.driver.extraJavaOptions", " -Xbootclasspath/p:/home/hadoop/hbase-install/lib/bigtable/alpn-boot-7.0.0.v20140317.jar")
        val ssc = new StreamingContext(conf, Seconds(30)) 
        val tableName = TableName.valueOf(name)
        val conn = ConnectionFactory.createConnection(); 
@@ -52,8 +49,9 @@ object SparkExample {
 	 admin.close()
        } catch {
          case e: Exception => e.printStackTrace; throw e
+       } finally {
+         conn.close()
        }
-       conn.close()
 
        val dStream = ssc.textFileStream(inputDirectory)
 
@@ -67,29 +65,26 @@ object SparkExample {
             val tableName1 = TableName.valueOf(name)
 	    val mutator = conn1.getBufferedMutator(tableName1)
 
-            partitionRecords.foreach{ line => { 
-	      try {
-		mutator.mutate(line.split(" ").filter(_!="").map(word => 
-                new Increment(toBytes(word))
-                .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
-	      } catch {
-	        case retries_e: RetriesExhaustedWithDetailsException => { 
-	          retries_e.getCauses().foreach(_.printStackTrace); 
-	  	  throw retries_e;
-		}
-		case e: Exception => e.printStackTrace; throw e
+	    try {
+              partitionRecords.foreach{ line => { 
+	      	try {
+		  mutator.mutate(line.split(" ").filter(_!="").map(word => 
+                  new Increment(toBytes(word))
+                  .addColumn(toBytes("WordCount"), toBytes("Count"), 1L)).toList)
+	        } catch {
+	          case retries_e: RetriesExhaustedWithDetailsException => { 
+	            retries_e.getCauses().foreach(_.printStackTrace); 
+	  	    throw retries_e;
+		  }
+		  case e: Exception => e.printStackTrace; throw e
+	        }
+//  	        mutator.flush()
+	        }
 	      }
-//  	      mutator.flush()
-	      }
+	    } finally {
+	      mutator.close()
+	      conn1.close()
 	    }
-
-            try {
-              mutator.close()
-            } catch {
-              case retries_e: RetriesExhaustedWithDetailsException => retries_e.getCauses().foreach(_.printStackTrace); throw retries_e
-              case e: Exception => e.printStackTrace; throw e
-            }
-	    conn1.close()
 	 }
        }
        ssc.start()

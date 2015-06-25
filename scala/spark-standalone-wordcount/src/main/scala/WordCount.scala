@@ -29,15 +29,18 @@ import org.apache.spark.SparkException
 /** word count in Spark **/
 
 object SparkExample {
+  val COLUMN_FAMILY = "cf"
+  val COLUMN_FAMILY_BYTES = Bytes.toBytes(COLUMN_FAMILY)
+  val COLUMN_NAME_BYTES = Bytes.toBytes("Count")
+       
   def main(args: Array[String]) {
-        if (args.length < 4) {
-	   throw new Exception("Please enter prefix name, input file path, output table name, and expected count as arguments")
+        if (args.length < 3) {
+	   throw new Exception("Please enter input file path, output table name, and expected count as arguments")
 	}
-        val prefixName = args(0)
-	val file = args(1) //file path
-	val name = args(2) //output table name
-	val expectedCount = args(3).toInt
-	args.foreach(println)	
+	val file = args(0) //file path
+	val name = args(1) //output table name
+	val expectedCount = args(2).toInt
+	val prefixName = sys.env("PREFIX")
 
 	val masterInfo = "spark://" + prefixName + "-m:7077"
 	val sc= new SparkContext(masterInfo, "WordCount") 
@@ -49,37 +52,42 @@ object SparkExample {
           val admin = conn.getAdmin()
 	   if (!admin.tableExists(tableName)) {
 	       val tableDescriptor = new HTableDescriptor(tableName)
-	       tableDescriptor.addFamily(new HColumnDescriptor("cf"))
+	       tableDescriptor.addFamily(new HColumnDescriptor(COLUMN_FAMILY))
 	       admin.createTable(tableDescriptor) 
 	   }
 	   admin.close()
         } catch {
           case e: Exception => e.printStackTrace;  throw e
-        }
-        conn.close()
+        } finally {
+          conn.close()
+	}
 
-	val wordCounts = sc.textFile(file).flatMap(_.split(" ")).filter(_!="").map(word => (word, 1)).reduceByKey((a,b) => a+b)
+	val wordCounts = sc.textFile(file).flatMap(_.split(" ")).filter(_!="").map((_,1)).reduceByKey((a,b) => a+b)
 
         wordCounts.foreachPartition { 
  	  partition => {
 	    val conn1 = ConnectionFactory.createConnection(); 
-            def toBytes(word: String):Array[Byte] = {
-              word.toCharArray.map(_.toByte)
-            }
             val tableName1 = TableName.valueOf(name)
             val mutator = conn1.getBufferedMutator(tableName1)	    
-	    partition.foreach{ wordCount => {
-	      val (word, count) = wordCount
-  	      try {
-	        mutator.mutate(new Put(toBytes(word)).addColumn(toBytes("cf"), toBytes("Count"), Bytes.toBytes(count))) 
-	      } catch {
-	        case retries_e: RetriesExhaustedWithDetailsException => { 
-		  retries_e.getCauses().foreach(_.printStackTrace); println("Retries: "+retries_e.getClass);   throw retries_e.getCauses().get(0); }
-	        case e: Exception => println("General exception: "+ e.getClass); throw e
-	      }
-	    }   }
-	    mutator.close()
-	    conn1.close()
+	    try {
+	      partition.foreach{ wordCount => {
+	        val (word, count) = wordCount
+  	        try {
+	          mutator.mutate(new Put(Bytes.toBytes(word)).addColumn(COLUMN_FAMILY_BYTES, COLUMN_NAME_BYTES, Bytes.toBytes(count))) 
+	        } catch {
+	          // This is a possible exception we could get with BufferedMutator.mutate
+	          case retries_e: RetriesExhaustedWithDetailsException => { 
+		    retries_e.getCauses().foreach(_.printStackTrace)
+		    println("Retries: "+retries_e.getClass)
+		    throw retries_e.getCauses().get(0)
+		  }
+	          case e: Exception => println("General exception: "+ e.getClass); throw e
+	        }
+	      }   }
+	    } finally {
+	      mutator.close()
+	      conn1.close()
+	    }
 	  }   
 	}
 
