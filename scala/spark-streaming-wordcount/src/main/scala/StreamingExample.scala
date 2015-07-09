@@ -41,7 +41,12 @@ object SparkExample {
        val conf = new SparkConf().setMaster("local[*]").setAppName("FileWordCount") 
        val ssc = new StreamingContext(conf, Seconds(30)) 
        val tableName = TableName.valueOf(name)
-       val conn = ConnectionFactory.createConnection(); 
+
+      var hbaseConfig = HBaseConfiguration.create()
+      // broadcast a serialized config object allows us to use the same conf object among the driver and executors
+      val confBroadcast = ssc.sparkContext.broadcast(new SerializableWritable(hbaseConfig))
+      hbaseConfig = null
+      val conn = ConnectionFactory.createConnection(confBroadcast.value.value);
    
        try {
          val admin = conn.getAdmin()
@@ -62,7 +67,8 @@ object SparkExample {
          val wordCounts = rdd.flatMap(_.split(" ")).filter(_!="").map((_,1)).reduceByKey((a,b) => a+b)
 	 wordCounts.foreachPartition {  
  	   partition => {
-	     val conn1 = ConnectionFactory.createConnection(); 
+             val config = confBroadcast.value.value
+	     val conn1 = ConnectionFactory.createConnection(config); 
              val tableName1 = TableName.valueOf(name)
              val mutator = conn1.getBufferedMutator(tableName1)	    
 	     try {

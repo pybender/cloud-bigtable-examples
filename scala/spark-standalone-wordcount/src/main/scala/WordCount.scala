@@ -25,10 +25,14 @@ import scala.collection.JavaConversions._
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.hadoop.mapreduce.JobContext
 import org.apache.spark.SparkException
+import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
+import java.io.DataOutputStream
+import java.io.DataInputStream
 
 /** word count in Spark **/
 
-object SparkExample {
+object SparkExample extends Logging {
   val COLUMN_FAMILY = "cf"
   val COLUMN_FAMILY_BYTES = Bytes.toBytes(COLUMN_FAMILY)
   val COLUMN_NAME_BYTES = Bytes.toBytes("Count")
@@ -47,7 +51,19 @@ object SparkExample {
 
 	// create new table if it's not already existed
         val tableName = TableName.valueOf(name)
-        val conn = ConnectionFactory.createConnection(); 
+        var hbaseConfig = HBaseConfiguration.create()
+        hbaseConfig.set(TableInputFormat.INPUT_TABLE, name)
+        // broadcast a serialized config object allows us to use the same conf object among the driver and executors
+    val confBroadcast = sc.broadcast(new SerializableWritable(hbaseConfig))
+    hbaseConfig = null
+/**
+    val baos = new ByteArrayOutputStream();
+    var dos = new DataOutputStream(baos);
+    hbaseConfig.write(dos);
+    val confBytes = baos.toByteArray;
+    dos = null
+  */
+        val conn = ConnectionFactory.createConnection(confBroadcast.value.value); 
         try {
           val admin = conn.getAdmin()
 	   if (!admin.tableExists(tableName)) {
@@ -64,9 +80,13 @@ object SparkExample {
 
 	val wordCounts = sc.textFile(file).flatMap(_.split(" ")).filter(_!="").map((_,1)).reduceByKey((a,b) => a+b)
 
+
         wordCounts.foreachPartition { 
  	  partition => {
-	    val conn1 = ConnectionFactory.createConnection(); 
+            val config = confBroadcast.value.value
+            println(config)
+            config.foreach(println)
+	    val conn1 = ConnectionFactory.createConnection(config); 
             val tableName1 = TableName.valueOf(name)
             val mutator = conn1.getBufferedMutator(tableName1)	    
 	    try {
@@ -89,16 +109,55 @@ object SparkExample {
 	      conn1.close()
 	    }
 	  }   
+  
 	}
 
+
+/**
+        wordCounts.foreachPartition { 
+ 	  partition => {
+            val bais = new ByteArrayInputStream(confBytes);
+            val dis = new DataInputStream(bais);
+            val config = new HBaseConfiguration();
+            println("!!!!!!!!!!!!!!!! BEFORE READ FIELDS: CONFIG IS: ")
+            println(config)
+            config.foreach(println)
+            config.readFields(dis);
+            println("!!!!!!!!!!!!!!!! AFTER READ FIELDS: CONFIG IS: ")
+            println(config)
+            config.foreach(println)
+	    val conn1 = ConnectionFactory.createConnection(config); 
+            val tableName1 = TableName.valueOf(name)
+            val mutator = conn1.getBufferedMutator(tableName1)	    
+	    try {
+	      partition.foreach{ wordCount => {
+	        val (word, count) = wordCount
+  	        try {
+	          mutator.mutate(new Put(Bytes.toBytes(word)).addColumn(COLUMN_FAMILY_BYTES, COLUMN_NAME_BYTES, Bytes.toBytes(count))) 
+	        } catch {
+	          // This is a possible exception we could get with BufferedMutator.mutate
+	          case retries_e: RetriesExhaustedWithDetailsException => { 
+		    retries_e.getCauses().foreach(_.printStackTrace)
+		    println("Retries: "+retries_e.getClass)
+		    throw retries_e.getCauses().get(0)
+		  }
+	          case e: Exception => println("General exception: "+ e.getClass); throw e
+	        }
+	      }   }
+	    } finally {
+	      mutator.close()
+	      conn1.close()
+	    }
+	  }   
+  
+	}
+  */
 	//validate table count
-	val confValidate = HBaseConfiguration.create()
-        confValidate.set(TableInputFormat.INPUT_TABLE, name);
-	val hBaseRDD = sc.newAPIHadoopRDD(confValidate, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) 	
+	val hBaseRDD = sc.newAPIHadoopRDD(confBroadcast.value.value, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result]) 	
 	val count = hBaseRDD.count.toInt
 
 	//cleanup
-        val connCleanup = ConnectionFactory.createConnection(); 
+        val connCleanup = ConnectionFactory.createConnection(confBroadcast.value.value); 
         try {
           val admin = connCleanup.getAdmin()
 	  admin.deleteTable(tableName)
