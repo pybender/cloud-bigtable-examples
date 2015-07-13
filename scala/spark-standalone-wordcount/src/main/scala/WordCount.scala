@@ -44,10 +44,7 @@ object SparkExample extends Logging {
     val file = args(0) //file path
     val name = args(1) //output table name
     val expectedCount = args(2).toInt
-    val prefixName = sys.env("PREFIX")
-
-    val masterInfo = "spark://" + prefixName + "-m:7077"
-    val sc= new SparkContext(masterInfo, "WordCount")
+    val sc = new SparkContext()
 
     var hbaseConfig = HBaseConfiguration.create()
     hbaseConfig.set(TableInputFormat.INPUT_TABLE, name)
