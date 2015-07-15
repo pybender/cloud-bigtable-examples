@@ -56,14 +56,17 @@ object CloudPubsubReceiver {
   val COLUMN_FAMILY_BYTES = Bytes.toBytes(COLUMN_FAMILY)
   val COLUMN_NAME_BYTES = Bytes.toBytes("Count")
 
-  //args: 
+  //args: pubsub_test cmd_line_1 sduskis-hello-shakespear subscription1
   def main(args: Array[String]) {
-    val name = "pubsub_test"
-    val topicName = "cmd_line_1"
-    val projectName = "sduskis-hello-shakespear"
-    val subscriptionName = "subscription1"
+    if (args.length < 4) {
+      throw new Exception("Please enter output table name, topic name, project name, and subscription name as arguments")
+    }
+    val name = args(0)
+    val topicName = args(1)
+    val projectName = args(2)
+    val subscriptionName = args(3)
     val sparkConf = new SparkConf().setAppName("CloudPubsubWordCount")
-    val ssc = new StreamingContext(sparkConf, Seconds(30))
+    val ssc = new StreamingContext(sparkConf, Seconds(1))
     var hbaseConfig = HBaseConfiguration.create()
     // broadcast a serialized config object allows us to use the same conf object among the driver and executors
     val confBroadcast = ssc.sparkContext.broadcast(new SerializableWritable(hbaseConfig))
