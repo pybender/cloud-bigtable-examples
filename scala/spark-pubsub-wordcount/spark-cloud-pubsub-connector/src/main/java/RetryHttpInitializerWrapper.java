@@ -15,6 +15,9 @@ import java.io.IOException;
 import java.util.logging.Logger;
 
 /**
+ * THIS WAS TAKEN FROM THE CMDLINE-PULL EXAMPLE OF GOOGLE CLOUD PLATFORM: 
+ * https://github.com/GoogleCloudPlatform/cloud-pubsub-samples-java/tree/master/cmdline-pull
+ *
  * RetryHttpInitializerWrapper will automatically retry upon RPC
  * failures, preserving the auto-refresh behavior of the Google
  * Credentials.

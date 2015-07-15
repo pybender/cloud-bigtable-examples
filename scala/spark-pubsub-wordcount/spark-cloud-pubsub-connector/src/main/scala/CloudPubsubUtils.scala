@@ -43,10 +43,17 @@ import com.google.api.services.pubsub.model.PublishRequest;
 import com.google.api.services.pubsub.model.PublishResponse;
 import com.google.api.services.pubsub.model.Topic;
 
-//can be used by both CloudPubsubInputDStream class and client (cloud-pubsub-receiver)
-
+/** Utility methods that can be used by both CloudPubsubInputDStream class and client (cloud-pubsub-receiver) */
 object CloudPubsubUtils {
 
+  /** Creates a new CloudPubsubInputDStream which pull messages from a pubsub topic
+    * 
+    * @param ssc StreamingContext object
+    * @param projectName name of your GCP project
+    * @param topicName name of your Cloud Pubsub Topic
+    * @param subscriptionName name of a Cloud Pubsub Subscription you want to create
+    * @return a new CloudPubsubDStream instance
+    */
   def createDirectStream (@transient ssc: StreamingContext, projectName: String, topicName: String, subscriptionName: String): 
       CloudPubsubInputDStream = {
     new CloudPubsubInputDStream(ssc, projectName, topicName, subscriptionName)
@@ -56,8 +63,7 @@ object CloudPubsubUtils {
     * Builds a new Pubsub client with default HttpTransport and
     * JsonFactory and returns it.
     *
-    * @return Pubsub client.
-    * @throws IOException when we can not get the default credentials.
+    * @return a new Pubsub client object
     */
   def getClient(): Pubsub = {
     getClient(Utils.getDefaultTransport(), Utils.getDefaultJsonFactory())
@@ -68,8 +74,7 @@ object CloudPubsubUtils {
     *
     * @param httpTransport HttpTransport for Pubsub client.
     * @param jsonFactory JsonFactory for Pubsub client.
-    * @return Pubsub client.
-    * @throws IOException when we can not get the default credentials.
+    * @return a new Pubsub client object
     */
   def getClient(httpTransport: HttpTransport, jsonFactory: JsonFactory): Pubsub = {
     Preconditions.checkNotNull(httpTransport);
@@ -87,6 +92,13 @@ object CloudPubsubUtils {
       .build();
   }
 
+  /**
+    * Sends a list of acknowledgement messages to Cloud Pubsub
+    * 
+    * @param client your Pubsub instance
+    * @param ackIds a list of ack IDs
+    * @param subscriptionName name of your Cloud Pubsub subscription
+    */
   def sendAcks(client: Pubsub, ackIds: scala.collection.immutable.List[String], subscriptionName: String) {
     assert(client!=null)
     assert(ackIds != null)
@@ -99,6 +111,14 @@ object CloudPubsubUtils {
       .execute();
   }
 
+
+  /**
+    * Lists all subscriptions the Pubsub client has under a Cloud Pubsub project
+    * 
+    * @param client your Pubsub instance
+    * @param project the name of your GCP project
+    * @return a list of your Cloud Pubsub subscriptions
+    */
   def listSubscriptions(client: Pubsub, project: String): List[Subscription] = {
     var ret = List[Subscription]()
     var nextPageToken: String = null;
@@ -116,16 +136,6 @@ object CloudPubsubUtils {
       nextPageToken = response.getNextPageToken();
     } while (nextPageToken != null);
     ret
-  }
-
-  def getReceivedMessageContent(receivedMessage: ReceivedMessage): String = {
-    val pubsubMessage = receivedMessage.getMessage();
-    if (pubsubMessage != null
-      && pubsubMessage.decodeData() != null) {
-      val thisMessage = new String(pubsubMessage.decodeData(), "UTF-8")
-      thisMessage
-    }
-    ""
   }
 }
 
