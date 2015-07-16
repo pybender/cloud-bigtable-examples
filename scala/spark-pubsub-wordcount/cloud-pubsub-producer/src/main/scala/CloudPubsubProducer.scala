@@ -60,6 +60,8 @@ object CloudPubsubProducer {
     val fileName = args(2)
     val client = CloudPubsubUtils.getClient();
     val topic = "projects/"+ projectID + "/topics/" + topicName
+    //TODO: check if the topic exists or not; if not, create a new topic 
+    
 
     scala.tools.nsc.io.File(fileName).lines().filter(_!="").foreach{ line => {
       val message = line

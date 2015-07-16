@@ -47,6 +47,8 @@ import java.net.Socket;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.io.{ObjectOutputStream, ObjectInputStream}
+import java.io.{FileOutputStream, FileInputStream}
 
 import connector.CloudPubsubInputDStream
 import connector.CloudPubsubUtils
@@ -90,50 +92,40 @@ object CloudPubsubReceiver {
 
     val ackIDMessagesDStream = CloudPubsubUtils.createDirectStream(ssc, projectName, topicName, subscriptionName)
     ackIDMessagesDStream.foreach{ rdd => {
-      val ackIDMessageObjects = rdd.map{ tuple3 => {
-        val (ackID, messageID, messageString) = tuple3
-        (ackID, (messageID, messageString))
-      }   }
-      // condense the list to ackID -> list of messages
-      val ackIDMessageObjectsList = ackIDMessageObjects.collect().toList.groupBy(_._1).map{ case (k,v) => (k,v.map(_._2))}
-      ackIDMessageObjectsList.foreach{ tuple => {
-        val (ackID, messageList) = tuple
-        messageList.foreach{ messageObject => {
-          val (messageID, messageString) = messageObject
-          val splitWords = messageString.split(" ")
-          val wordsRDD = ssc.sparkContext.parallelize(splitWords)
-          val wordCounts = wordsRDD.filter(_!="").map((_,1)).reduceByKey((a,b)=>a+b)
-          wordCounts.foreachPartition{ partition => {
-            val config = confBroadcast.value.value
-            val conn1 = ConnectionFactory.createConnection(config);
-            val tableName1 = TableName.valueOf(name)
-            val mutator = conn1.getBufferedMutator(tableName1)
-            try {
-              partition.foreach{ wordCount => {
-                val (word, count) = wordCount
-                try {
-                  mutator.mutate(new Put(Bytes.toBytes(word + "|" + messageID)).addColumn(COLUMN_FAMILY_BYTES, COLUMN_NAME_BYTES, Bytes.toBytes(count)))
-                } catch {
-                  // This is a possible exception we could get with BufferedMutator.mutate
-                  case retries_e: RetriesExhaustedWithDetailsException => {
-                    retries_e.getCauses().foreach(_.printStackTrace)
-                    println("Retries: "+retries_e.getClass)
-                    throw retries_e.getCauses().get(0)
-                  }
-                  case e: Exception => println("General exception: "+ e.getClass); throw e
+      rdd.collect().toList.foreach{ tuple => {
+        val (ackID, messageID, messageString) = tuple
+        val splitWords = messageString.split(" ")
+        val wordsRDD = ssc.sparkContext.parallelize(splitWords)
+        val wordCounts = wordsRDD.filter(_!="").map((_,1)).reduceByKey((a,b)=>a+b)
+        wordCounts.foreachPartition{ partition => {
+          val config = confBroadcast.value.value
+          val conn1 = ConnectionFactory.createConnection(config);
+          val tableName1 = TableName.valueOf(name)
+          val mutator = conn1.getBufferedMutator(tableName1)
+          try {
+            partition.foreach{ wordCount => {
+              val (word, count) = wordCount
+              try {
+                mutator.mutate(new Put(Bytes.toBytes(word + "|" + messageID)).addColumn(COLUMN_FAMILY_BYTES, COLUMN_NAME_BYTES, Bytes.toBytes(count)))
+              } catch {
+                // This is a possible exception we could get with BufferedMutator.mutate
+                case retries_e: RetriesExhaustedWithDetailsException => {
+                  retries_e.getCauses().foreach(_.printStackTrace)
+                  println("Retries: "+retries_e.getClass)
+                  throw retries_e.getCauses().get(0)
                 }
-              }  }
-            } finally {
-              mutator.close()
-              conn1.close()
-            }
-          }  }
+                case e: Exception => println("General exception: "+ e.getClass); throw e
+              }
+            }  }
+          } finally {
+            mutator.close()
+            conn1.close()
+          }
         }  }
         val client = CloudPubsubUtils.getClient()
         CloudPubsubUtils.sendAcks(client, Array(ackID).toList, "projects/"+projectName+"/subscriptions/"+subscriptionName)
       }  }
     }   }
-
     ssc.start()
     ssc.awaitTermination()
   }
