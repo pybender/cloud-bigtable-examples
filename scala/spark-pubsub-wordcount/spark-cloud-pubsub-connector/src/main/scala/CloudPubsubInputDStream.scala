@@ -60,7 +60,6 @@ class CloudPubsubInputDStream (
   private var topicFullName = projectFullName + "/topics/"+ topicName
   private var subscriptionFullName = projectFullName + "/subscriptions/"+ subscriptionName
   private var BATCH_SIZE = 1000
-  private var LOOP_ENV_NAME = "LOOP"
   private var client = CloudPubsubUtils.getClient();
   private var subscriptionObject: Subscription = null
 
@@ -82,8 +81,6 @@ class CloudPubsubInputDStream (
   override def start() { 
     log.info("Starting CloudPubsubInfoDStream")
     val existingSubscription = returnSubscriptionObject(subscriptionFullName)
-
-    
     if (existingSubscription != null) {
       subscriptionObject = existingSubscription
       log.info("Found an existing subscription that matches the subscription name: "+ existingSubscription)
@@ -105,6 +102,7 @@ class CloudPubsubInputDStream (
   }
 
   override def stop() { 
+    //TODO this never happens even though this method is in InputDStream.scala, 
     client.projects().subscriptions().delete(subscriptionFullName).execute()
     log.info("Deleted subscription: " + subscriptionFullName)
   }
