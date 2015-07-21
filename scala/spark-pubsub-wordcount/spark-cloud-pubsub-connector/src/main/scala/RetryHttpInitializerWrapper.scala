@@ -15,7 +15,7 @@ import java.io.IOException;
 import java.util.logging.Logger;
 
 /**
-  *  THIS WAS TAKEN FROM THE CMDLINE-PULL EXAMPLE OF GOOGLE CLOUD PLATFORM: 
+  *  THIS WAS TAKEN FROM THE CMDLINE-PULL EXAMPLE OF GOOGLE CLOUD PLATFORM and translated into scala: 
   *  https://github.com/GoogleCloudPlatform/cloud-pubsub-samples-java/tree/master/cmdline-pull
   * 
   *  RetryHttpInitializerWrapper will automatically retry upon RPC

@@ -79,17 +79,14 @@ object CloudPubsubUtils {
   def getClient(httpTransport: HttpTransport, jsonFactory: JsonFactory): Pubsub = {
     Preconditions.checkNotNull(httpTransport);
     Preconditions.checkNotNull(jsonFactory);
-    var credential =
-      GoogleCredential.getApplicationDefault(httpTransport, jsonFactory);
+    var credential = GoogleCredential.getApplicationDefault(httpTransport, jsonFactory);
     if (credential.createScopedRequired()) {
       credential = credential.createScoped(PubsubScopes.all());
     }
     // Please use custom HttpRequestInitializer for automatic
     // retry upon failures.
     val initializer = new RetryHttpInitializerWrapper(credential);
-    new Pubsub.Builder(httpTransport, jsonFactory, initializer)
-      .setApplicationName("Spark Cloud Pubsub Connector")
-      .build();
+    new Pubsub.Builder(httpTransport, jsonFactory, initializer).setApplicationName("Spark Cloud Pubsub Connector").build();
   }
 
   /**
@@ -106,9 +103,7 @@ object CloudPubsubUtils {
     val ackRequest = new AcknowledgeRequest();
     val ackIdList = ackIds.asJava
     ackRequest.setAckIds(ackIdList)
-    client.projects().subscriptions()
-      .acknowledge(subscriptionName, ackRequest)
-      .execute();
+    client.projects().subscriptions().acknowledge(subscriptionName, ackRequest).execute();
   }
 
 

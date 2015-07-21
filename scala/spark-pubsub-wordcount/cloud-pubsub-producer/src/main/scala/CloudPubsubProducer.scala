@@ -48,20 +48,19 @@ import scala.io.Source
 
 import connector.CloudPubsubUtils
 
-// Produces some random words between 1 and 100.
+/** Read an input file line by line, and publush each line as a message to a Cloud Pubsub topic
+  * 
+  */
 object CloudPubsubProducer {
-  //example args: sduskis-hello-shakespear cmd_line_1 romeo_juliet.txt
-  def main(args: Array[String]) {
+  def main(args: Array[String]) {   //example args: sduskis-hello-shakespear cmd_line_1 romeo_juliet.txt
     if (args.length < 3) {
-      throw new Exception("Please enter project name, topic name, and input file name as arguments. Example: sbt \"project cloud-pubsub-producer\" \"run sduskis-hello-shakespear cmd_line_1 romeo_juliet.txt\" ")
+      throw new Exception("Please enter project name, topic name, and input file name as arguments. The project and topic must exist. Example: sbt \"project cloud-pubsub-producer\" \"run sduskis-hello-shakespear cmd_line_1 romeo_juliet.txt\" ")
     }
     val projectID = args(0)
     val topicName = args(1)
     val fileName = args(2)
     val client = CloudPubsubUtils.getClient();
     val topic = "projects/"+ projectID + "/topics/" + topicName
-    //TODO: check if the topic exists or not; if not, create a new topic 
-    
 
     scala.tools.nsc.io.File(fileName).lines().filter(_!="").foreach{ line => {
       val message = line
@@ -71,9 +70,7 @@ object CloudPubsubProducer {
       val messages = ImmutableList.of(pubsubMessage);
       val publishRequest = new PublishRequest();
       publishRequest.setMessages(messages);
-      val publishResponse = client.projects().topics()
-        .publish(topic, publishRequest)
-        .execute();
+      val publishResponse = client.projects().topics().publish(topic, publishRequest).execute();
       val messageIds = publishResponse.getMessageIds();
       messageIds.foreach(messageId => println("Published with a message id: " + messageId))
       Thread.sleep(1000)
