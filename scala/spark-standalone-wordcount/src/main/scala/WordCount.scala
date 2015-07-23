@@ -74,8 +74,6 @@ object SparkExample extends Logging {
     wordCounts.foreachPartition {
       partition => {
         val config = confBroadcast.value.value
-        println(config)
-        config.foreach(println)
 	val conn1 = ConnectionFactory.createConnection(config);
         val tableName1 = TableName.valueOf(name)
         val mutator = conn1.getBufferedMutator(tableName1)
@@ -99,7 +97,6 @@ object SparkExample extends Logging {
 	  conn1.close()
 	}
       }
-  
     }
     //validate table count
     val hBaseRDD = sc.newAPIHadoopRDD(confBroadcast.value.value, classOf[TableInputFormat], classOf[org.apache.hadoop.hbase.io.ImmutableBytesWritable], classOf[org.apache.hadoop.hbase.client.Result])
